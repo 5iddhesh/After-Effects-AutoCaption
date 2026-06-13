@@ -1,5 +1,7 @@
 # After Effects AutoCaption
 
+![AutoCaption — captions in just 2 clicks](docs/demo.svg)
+
 Word-accurate auto captions for Adobe After Effects, driven by a ScriptUI panel.
 Transcribes a selected audio/video layer with the **Groq** or **OpenAI Whisper**
 API, drops one timeline **marker per word**, then generates clean, styled,
@@ -12,6 +14,23 @@ replaced on every generate, so iterating is safe.
 ![After Effects](https://img.shields.io/badge/After%20Effects-24%2B-9999FF?logo=adobeaftereffects&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-macOS-black?logo=apple)
 ![License](https://img.shields.io/badge/License-Proprietary-blue)
+
+---
+
+## ⚡ Just 2 clicks
+
+Select your audio layer, then:
+
+| | Click | What happens |
+|---|---|---|
+| **1️⃣** | **Transcribe & Mark Words** | Audio is transcribed and one **marker per spoken word** lands on the layer, perfectly timed. |
+| **2️⃣** | **Generate Captions** | Styled, animated caption layers are built from those markers — with the spoken word highlighting in real time. |
+
+That's it. Everything in between (style, highlight color, animation preset) has
+sensible defaults, so two clicks gets you finished captions on the timeline.
+
+> *The graphic above illustrates the panel and workflow — it's a faithful
+> mockup of the real UI, not a screen recording.*
 
 ---
 
