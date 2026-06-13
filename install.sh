@@ -73,21 +73,41 @@ if [ "$INSTALL_PANEL" = 1 ]; then
   fi
 
   shopt -s nullglob
-  found=0
-  for dir in "$HOME/Library/Application Support/Adobe/After Effects/"*"/Scripts/ScriptUI Panels"; do
-    cp "$SOURCE_JSX" "$dir/AutoCaption.jsx" && ok "copied to: ${dir/#$HOME/~}" && found=1
+
+  # Build the list of target "ScriptUI Panels" folders. AE reads scripts from
+  # BOTH the app bundle and the user folder; the app-bundle one always exists
+  # the moment AE is installed, so it's the reliable target on a fresh machine.
+  targets=()
+  # 1. App-bundle locations (/Applications/Adobe After Effects <year>/Scripts/ScriptUI Panels)
+  for app in /Applications/Adobe\ After\ Effects\ */; do
+    [ -d "$app" ] || continue
+    targets+=("${app%/}/Scripts/ScriptUI Panels")
   done
-  if [ "$found" = 0 ]; then
-    # AE installed but never opened? create the folder for the newest version we can find
-    base="$HOME/Library/Application Support/Adobe/After Effects"
-    if [ -d "$base" ]; then
-      newest="$(ls -1 "$base" | sort -V | tail -1)"
-      target="$base/$newest/Scripts/ScriptUI Panels"
-      mkdir -p "$target" && cp "$SOURCE_JSX" "$target/AutoCaption.jsx" \
-        && ok "created and copied to: ${target/#$HOME/~}" && found=1
+  # 2. User locations that already exist (~/Library/Application Support/.../Scripts/ScriptUI Panels)
+  for dir in "$HOME/Library/Application Support/Adobe/After Effects/"*"/Scripts/ScriptUI Panels"; do
+    targets+=("$dir")
+  done
+
+  if [ "${#targets[@]}" = 0 ]; then
+    warn "After Effects doesn't appear to be installed (no /Applications/Adobe After Effects … found)."
+    warn "Install AE first, then re-run this. Or copy AutoCaption.jsx into its 'Scripts/ScriptUI Panels' folder by hand:"
+    echo  "    $SOURCE_JSX"
+  else
+    found=0
+    for dir in "${targets[@]}"; do
+      mkdir -p "$dir" 2>/dev/null || true
+      if cp "$SOURCE_JSX" "$dir/AutoCaption.jsx" 2>/dev/null && [ -f "$dir/AutoCaption.jsx" ]; then
+        ok "installed → ${dir/#$HOME/~}"
+        found=1
+      elif [ -d "$dir" ]; then
+        warn "couldn't write (needs admin): $dir"
+        warn "  run:  sudo cp '$SOURCE_JSX' '$dir/AutoCaption.jsx'"
+      fi
+    done
+    if [ "$found" = 1 ]; then
+      ok "AutoCaption.jsx is in place. ${YELLOW}Fully quit (Cmd+Q) and reopen After Effects${NC} — it appears under the Window menu."
     fi
   fi
-  [ "$found" = 1 ] || warn "After Effects not found. Copy AutoCaption.jsx into its 'Scripts/ScriptUI Panels' folder manually."
 fi
 
 echo
