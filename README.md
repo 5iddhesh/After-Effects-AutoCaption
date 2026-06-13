@@ -181,4 +181,5 @@ transcription. Nothing else leaves your machine. API keys are stored locally onl
 
 ## License
 
-[LICENSE](LICENSE)
+Proprietary — © 2026 5iddhesh. All rights reserved. Free to use (including
+commercially), but may not be redistributed or modified. See [LICENSE](LICENSE).
