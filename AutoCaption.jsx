@@ -352,9 +352,9 @@
         td.resetCharStyle();
         td.font = S.fontName;
         td.fontSize = S.fontSize;
-        td.applyFill = true;
-        td.fillColor = AC.hexToRgb(S.fillHex);
-        if (S.strokeWidth > 0) {
+        td.applyFill = (S.fillOn !== false);
+        if (td.applyFill) td.fillColor = AC.hexToRgb(S.fillHex);
+        if (S.strokeOn === true && S.strokeWidth > 0) {
             td.applyStroke = true;
             td.strokeColor = AC.hexToRgb(S.strokeHex);
             td.strokeWidth = S.strokeWidth;
@@ -366,10 +366,13 @@
         td.justification = ParagraphJustification.CENTER_JUSTIFY;
         st.setValue(td);
         var pctMap = { Bottom: 85, Center: 50, Top: 12 };
-        var pct = (S.placement === "Custom") ? S.customY : pctMap[S.placement];
-        if (pct === undefined || isNaN(pct)) pct = 85;
+        var pctY = S.customY;                               // Y box drives all placements
+        if (pctY === undefined || isNaN(pctY)) pctY = pctMap[S.placement];
+        if (pctY === undefined || isNaN(pctY)) pctY = 85;
+        var pctX = (S.placement === "Custom") ? S.customX : 50;
+        if (pctX === undefined || isNaN(pctX)) pctX = 50;
         tl.property("ADBE Transform Group").property("ADBE Position")
-          .setValue([comp.width / 2, comp.height * pct / 100]);
+          .setValue([comp.width * pctX / 100, comp.height * pctY / 100]);
         tl.inPoint = inT;
         tl.outPoint = outT;
         return tl;
@@ -471,9 +474,9 @@
         td.font = S.fontName;
         td.fontSize = S.fontSize;
         td.tracking = S.tracking;
-        td.applyFill = true;
-        td.fillColor = AC.hexToRgb(S.fillHex);
-        if (S.strokeWidth > 0) {
+        td.applyFill = (S.fillOn !== false);
+        if (td.applyFill) td.fillColor = AC.hexToRgb(S.fillHex);
+        if (S.strokeOn === true && S.strokeWidth > 0) {
             td.applyStroke = true;
             td.strokeColor = AC.hexToRgb(S.strokeHex);
             td.strokeWidth = S.strokeWidth;
@@ -545,11 +548,12 @@
         provider: "Groq", keyGroq: "", keyOpenAI: "",
         language: "auto",
         snapToFrame: false, stripPunct: false,
-        placement: "Bottom", customY: 85,
+        placement: "Bottom", customX: 50, customY: 85,
         wordsPerScreen: 3, smartChunk: true,
         fontName: "Montserrat-Bold", fontSize: 80,
         tracking: 0,
-        fillHex: "FFFFFF", strokeHex: "000000", strokeWidth: 0,
+        fillOn: true, strokeOn: false,
+        fillHex: "FFFFFF", strokeHex: "FFFFFF", strokeWidth: 0,
         highlightOn: true, highlightHex: "FFD60A",
         animOn: true, animPreset: "Rise Up (Words)"
     };
@@ -624,20 +628,201 @@
             : new Window("palette", SCRIPT_NAME + " v" + VERSION, undefined, { resizeable: true });
 
         win.orientation = "column";
-        win.alignChildren = ["fill", "top"];
-        win.spacing = 6;
-        win.margins = 10;
+        win.alignChildren = ["center", "top"];
+        win.spacing = 8;
+        win.margins = 12;
 
-        var stTitle = win.add("statictext", undefined, SCRIPT_NAME + " V" + VERSION);
+        var stTitle = win.add("statictext", undefined, "AutoCaption " + VERSION + " by 5iddhesh");
         stTitle.alignment = ["center", "top"];
-        try { stTitle.graphics.font = ScriptUI.newFont(stTitle.graphics.font.name, "BOLD", 14); } catch (eT) {}
+        try { stTitle.graphics.font = ScriptUI.newFont(stTitle.graphics.font.name, "BOLD", 16); } catch (eT) {}
 
         function row(parent) {
             var g = parent.add("group");
             g.orientation = "row";
             g.alignChildren = ["left", "center"];
+            g.alignment = ["center", "top"];
             g.spacing = 6;
             return g;
+        }
+
+        // ---- rounded-rectangle path (arc corners approximated by segments) ----
+        function arc(g, cx, cy, r, a0, a1, seg) {
+            for (var i = 1; i <= seg; i++) {
+                var a = a0 + (a1 - a0) * (i / seg);
+                g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+            }
+        }
+        function roundRect(g, x, y, w, h, r) {
+            var seg = 6;
+            g.newPath();
+            g.moveTo(x + r, y);
+            g.lineTo(x + w - r, y);
+            arc(g, x + w - r, y + r, r, -Math.PI / 2, 0, seg);            // top-right
+            g.lineTo(x + w, y + h - r);
+            arc(g, x + w - r, y + h - r, r, 0, Math.PI / 2, seg);         // bottom-right
+            g.lineTo(x + r, y + h);
+            arc(g, x + r, y + h - r, r, Math.PI / 2, Math.PI, seg);       // bottom-left
+            g.lineTo(x, y + r);
+            arc(g, x + r, y + r, r, Math.PI, Math.PI * 1.5, seg);         // top-left
+            g.closePath();
+        }
+
+        // ---- custom highlighted, rounded, center-drawn action button ----
+        // (native ScriptUI buttons can't be colored or rounded, so this is a
+        //  drawn group that mimics one with hover/press feedback.)
+        // Hover-colour animator. ScriptUI has no native transitions, so we step
+        // each button's colour toward its target with AE's idle task scheduler
+        // for a smooth fade. Reset per panel build so reopening doesn't leak.
+        if ($.global.ACAnim && $.global.ACAnim.taskId != null) {
+            try { app.cancelTask($.global.ACAnim.taskId); } catch (eC) {}
+        }
+        $.global.ACAnim = {
+            list: [], taskId: null,
+            add: function (o) { this.list.push(o); },
+            ensure: function () {
+                if (this.taskId == null) {
+                    try { this.taskId = app.scheduleTask("$.global.ACAnim.tick()", 30, true); }
+                    catch (e) { this.taskId = null; }
+                }
+            },
+            tick: function () {
+                var active = false;
+                for (var i = 0; i < this.list.length; i++) {
+                    var o = this.list[i], dead = false;
+                    try { if (!o.stack.window) dead = true; } catch (e1) { dead = true; }
+                    if (dead) continue;
+                    var diff = o.target - o.t;
+                    if (Math.abs(diff) > 0.001) {
+                        o.t += diff * 0.30;
+                        if (Math.abs(o.target - o.t) < 0.012) o.t = o.target;
+                        try { o.repaint(); } catch (e2) {}
+                        active = true;
+                    }
+                }
+                if (!active && this.taskId != null) {
+                    try { app.cancelTask(this.taskId); } catch (e3) {}
+                    this.taskId = null;
+                }
+            }
+        };
+
+        // Light mint -> dark green on hover.
+        var BTN_BASE  = [0.451, 0.902, 0.796];   // #73E6CB light mint (resting)
+        var BTN_HOVER = [0.039, 0.235, 0.188];   // #0A3C30 dark green (hover)
+        var BTN_PRESS = [0.024, 0.125, 0.098];   // #062019 deepest (pressed)
+        // Text flips dark->light so it stays readable across the fade.
+        var TXT_ON_LIGHT = [0.012, 0.055, 0.043]; // near-black text on light bg
+        var TXT_ON_DARK  = [0.945, 0.992, 0.976]; // near-white text on dark bg
+
+        // Heaviest weight from a font that's available on essentially every
+        // device. ScriptUI's BOLD enum only reaches "bold", so we hand it an
+        // actual heavy face by PostScript name. Preference order favours nicer
+        // faces if installed, then falls back to Arial Black / Arial Bold,
+        // which ship on every mac & Windows, then the system bold.
+        function heaviestUIFont(size) {
+            var CAT2 = AC.fontCatalog();
+            var heavyRe = /(black|heavy|ultra|extra\s*bold|extrabold)/i;
+            var boldRe  = /bold/i;
+
+            // best face within the first family whose name matches famRe;
+            // scores Black/Heavy (2) above Bold (1); skips lighter styles.
+            function faceByFamily(famRe) {
+                for (var i = 0; i < CAT2.length; i++) {
+                    if (!famRe.test(CAT2[i].name)) continue;
+                    var bestPs = null, bestScore = 0;
+                    for (var j = 0; j < CAT2[i].styles.length; j++) {
+                        var tag = CAT2[i].styles[j].style + " " + CAT2[i].name;
+                        var sc = heavyRe.test(tag) ? 2 : (boldRe.test(tag) ? 1 : 0);
+                        if (sc > bestScore) { bestScore = sc; bestPs = CAT2[i].styles[j].ps; }
+                    }
+                    if (bestPs) { try { return ScriptUI.newFont(bestPs, ScriptUI.FontStyle.REGULAR, size); } catch (e) {} }
+                }
+                return null;
+            }
+
+            var fams = ["Montserrat", "Inter", "Poppins", "Roboto",
+                        "Arial Black", "Arial", "Helvetica Neue", "Helvetica"];
+            for (var p = 0; p < fams.length; p++) {
+                var f = faceByFamily(new RegExp("^" + fams[p].replace(/ /g, "\\s*") + "$", "i"));
+                if (f) return f;
+            }
+            // any Black/Heavy face anywhere, else system bold
+            return faceByFamily(/black|heavy|ultra/i)
+                || (function () { try { return ScriptUI.newFont("dialog", ScriptUI.FontStyle.BOLD, size); } catch (e) { return null; } })();
+        }
+        var BTN_FONT = heaviestUIFont(16);
+
+        function accentButton(parent, label, w, h) {
+            // stack group: background child + centred label child. ScriptUI
+            // lays out the label, so the text is perfectly centred. Draw order
+            // is creation order, so the label (added last) sits on top.
+            var stack = parent.add("group");
+            stack.orientation = "stack";
+            stack.alignChildren = ["center", "center"];
+            stack.preferredSize = [w, h];
+            stack.minimumSize = [w, h];
+            stack.maximumSize.height = h;
+            stack.alignment = ["center", "top"];
+            stack.margins = 0;
+            stack.spacing = 0;
+            stack._down = false;
+
+            var anim = { stack: stack, t: 0, target: 0,
+                repaint: function () {
+                    var t = stack._down ? 1 : anim.t;
+                    var tc = [
+                        TXT_ON_LIGHT[0] + (TXT_ON_DARK[0] - TXT_ON_LIGHT[0]) * t,
+                        TXT_ON_LIGHT[1] + (TXT_ON_DARK[1] - TXT_ON_LIGHT[1]) * t,
+                        TXT_ON_LIGHT[2] + (TXT_ON_DARK[2] - TXT_ON_LIGHT[2]) * t
+                    ];
+                    try { if (BTN_FONT) lbl.graphics.font = BTN_FONT; } catch (eF) {}
+                    try { lbl.graphics.foregroundColor =
+                          lbl.graphics.newPen(lbl.graphics.PenType.SOLID_COLOR, [tc[0], tc[1], tc[2], 1], 1); } catch (e0) {}
+                    stack.visible = false; stack.visible = true;
+                } };
+
+            var bg = stack.add("group");
+            bg.preferredSize = [w, h];
+            bg.minimumSize = [w, h];
+            bg.maximumSize = [w, h];
+            bg.onDraw = function () {
+                var g = this.graphics, W = this.size[0], H = this.size[1], t = anim.t;
+                var col = stack._down ? BTN_PRESS : [
+                    BTN_BASE[0] + (BTN_HOVER[0] - BTN_BASE[0]) * t,
+                    BTN_BASE[1] + (BTN_HOVER[1] - BTN_BASE[1]) * t,
+                    BTN_BASE[2] + (BTN_HOVER[2] - BTN_BASE[2]) * t
+                ];
+                roundRect(g, 1, 1, W - 2, H - 2, (H - 2) / 2);   // full pill
+                g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, [col[0], col[1], col[2], 1]));
+            };
+
+            var lbl = stack.add("statictext", undefined, label);
+            try { lbl.graphics.font = ScriptUI.newFont(lbl.graphics.font.name, ScriptUI.FontStyle.BOLD, 16); } catch (e1) {}
+            try { lbl.graphics.foregroundColor =
+                  lbl.graphics.newPen(lbl.graphics.PenType.SOLID_COLOR,
+                    [TXT_ON_LIGHT[0], TXT_ON_LIGHT[1], TXT_ON_LIGHT[2], 1], 1); } catch (e2) {}
+
+            $.global.ACAnim.add(anim);
+
+            function applyHover() {
+                $.global.ACAnim.ensure();
+                if ($.global.ACAnim.taskId == null) { anim.t = anim.target; anim.repaint(); }
+            }
+            function over() { anim.target = 1; applyHover(); }
+            function out()  { anim.target = 0; stack._down = false; applyHover(); }
+            function down() { stack._down = true; anim.repaint(); }
+            function up()   {
+                var was = stack._down; stack._down = false; anim.repaint();
+                if (was && typeof stack.onClick === "function") stack.onClick();
+            }
+            var targets = [stack, bg, lbl];
+            for (var ti = 0; ti < targets.length; ti++) {
+                targets[ti].addEventListener("mouseover", over);
+                targets[ti].addEventListener("mouseout", out);
+                targets[ti].addEventListener("mousedown", down);
+                targets[ti].addEventListener("mouseup", up);
+            }
+            return stack;
         }
 
         // small clickable color swatch + hex field, opens the system color picker
@@ -672,7 +857,7 @@
 
         // ===== 1. TRANSCRIBE =====
         var pSrc = win.add("panel", undefined, "Transcribe to Word Markers");
-        pSrc.orientation = "column"; pSrc.alignChildren = ["fill", "top"]; pSrc.margins = 10; pSrc.spacing = 6;
+        pSrc.orientation = "column"; pSrc.alignChildren = ["center", "top"]; pSrc.alignment = ["fill", "top"]; pSrc.margins = 12; pSrc.spacing = 8;
 
         // --- API key: ask once, then hide behind "Edit Key..." ---
         var gKeyStack = pSrc.add("group");
@@ -730,9 +915,42 @@
             { label: "English", code: "en" },
             { label: "\u0939\u093F\u0928\u094D\u0926\u0940 (Hindi)", code: "hi" },
             { label: "\u092E\u0930\u093E\u0920\u0940 (Marathi)", code: "mr" },
+            { label: "\u09AC\u09BE\u0982\u09B2\u09BE (Bengali)", code: "bn" },
+            { label: "\u0BA4\u0BAE\u0BBF\u0BB4\u0BCD (Tamil)", code: "ta" },
+            { label: "\u0C24\u0C46\u0C32\u0C41\u0C17\u0C41 (Telugu)", code: "te" },
+            { label: "\u0C95\u0CA8\u0CCD\u0CA8\u0CA1 (Kannada)", code: "kn" },
+            { label: "\u0D2E\u0D32\u0D2F\u0D3E\u0D33\u0D02 (Malayalam)", code: "ml" },
+            { label: "\u0A97\u0AC1\u0A9C\u0AB0\u0ABE\u0AA4\u0AC0 (Gujarati)", code: "gu" },
+            { label: "\u0A2A\u0A70\u0A1C\u0A3E\u0A2C\u0A40 (Punjabi)", code: "pa" },
+            { label: "\u0627\u0631\u062F\u0648 (Urdu)", code: "ur" },
             { label: "Espa\u00F1ol (Spanish)", code: "es" },
             { label: "Fran\u00E7ais (French)", code: "fr" },
-            { label: "Deutsch (German)", code: "de" }
+            { label: "Deutsch (German)", code: "de" },
+            { label: "Italiano (Italian)", code: "it" },
+            { label: "Portugu\u00EAs (Portuguese)", code: "pt" },
+            { label: "Nederlands (Dutch)", code: "nl" },
+            { label: "Polski (Polish)", code: "pl" },
+            { label: "Rom\u00E2n\u0103 (Romanian)", code: "ro" },
+            { label: "\u0420\u0443\u0441\u0441\u043A\u0438\u0439 (Russian)", code: "ru" },
+            { label: "\u0423\u043A\u0440\u0430\u0457\u043D\u0441\u044C\u043A\u0430 (Ukrainian)", code: "uk" },
+            { label: "T\u00FCrk\u00E7e (Turkish)", code: "tr" },
+            { label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629 (Arabic)", code: "ar" },
+            { label: "\u05E2\u05D1\u05E8\u05D9\u05EA (Hebrew)", code: "he" },
+            { label: "\u65E5\u672C\u8A9E (Japanese)", code: "ja" },
+            { label: "\uD55C\uAD6D\uC5B4 (Korean)", code: "ko" },
+            { label: "\u4E2D\u6587 (Chinese)", code: "zh" },
+            { label: "Ti\u1EBFng Vi\u1EC7t (Vietnamese)", code: "vi" },
+            { label: "\u0E44\u0E17\u0E22 (Thai)", code: "th" },
+            { label: "Bahasa Indonesia (Indonesian)", code: "id" },
+            { label: "Bahasa Melayu (Malay)", code: "ms" },
+            { label: "Filipino (Tagalog)", code: "tl" },
+            { label: "Svenska (Swedish)", code: "sv" },
+            { label: "Norsk (Norwegian)", code: "no" },
+            { label: "Dansk (Danish)", code: "da" },
+            { label: "Suomi (Finnish)", code: "fi" },
+            { label: "\u0395\u03BB\u03BB\u03B7\u03BD\u03B9\u03BA\u03AC (Greek)", code: "el" },
+            { label: "\u010Ce\u0161tina (Czech)", code: "cs" },
+            { label: "Magyar (Hungarian)", code: "hu" }
         ];
         var gLang = row(pSrc);
         gLang.add("statictext", undefined, "Language:");
@@ -750,23 +968,37 @@
         cbPunct.value = S.stripPunct;
 
         var gBtns1 = row(pSrc);
-        var btnTranscribe = gBtns1.add("button", undefined, "Transcribe & Mark Words");
-        btnTranscribe.preferredSize.width = 200;
         var btnImport = gBtns1.add("button", undefined, "Import SRT/JSON...");
         var btnClear = gBtns1.add("button", undefined, "Clear Markers");
+        var btnTranscribe = accentButton(pSrc, "Transcribe & Mark Words", 280, 44);
 
         // ===== 2. CAPTION STYLE =====
         var pCap = win.add("panel", undefined, "Generate Captions");
-        pCap.orientation = "column"; pCap.alignChildren = ["fill", "top"]; pCap.margins = 10; pCap.spacing = 6;
+        pCap.orientation = "column"; pCap.alignChildren = ["center", "top"]; pCap.alignment = ["fill", "top"]; pCap.margins = 12; pCap.spacing = 8;
 
         var gPlace = row(pCap);
+        gPlace.alignment = ["center", "top"];
         gPlace.add("statictext", undefined, "Placement:");
         var ddPlace = gPlace.add("dropdownlist", undefined, ["Bottom", "Center", "Top", "Custom"]);
         ddPlace.selection = 0;
         for (var pi = 0; pi < ddPlace.items.length; pi++)
             if (ddPlace.items[pi].text === S.placement) ddPlace.selection = pi;
+        // X/Y percent boxes are always visible. X is enabled only for "Custom";
+        // Y stays editable so Bottom/Top/Center can be nudged vertically too.
+        var pctMapY = { Bottom: 85, Center: 50, Top: 12 };
+        gPlace.add("statictext", undefined, "X %:");
+        var etX = gPlace.add("edittext", undefined, "" + S.customX); etX.characters = 4;
         gPlace.add("statictext", undefined, "Y %:");
         var etY = gPlace.add("edittext", undefined, "" + S.customY); etY.characters = 4;
+        function syncPlace() {
+            etX.enabled = (ddPlace.selection && ddPlace.selection.text === "Custom");
+            etY.enabled = true;
+        }
+        ddPlace.onChange = function () {
+            var p = ddPlace.selection ? ddPlace.selection.text : "Bottom";
+            if (p !== "Custom" && pctMapY[p] !== undefined) etY.text = "" + pctMapY[p];
+            syncPlace();
+        };
 
         var gChunk = row(pCap);
         gChunk.add("statictext", undefined, "Words / screen:");
@@ -838,10 +1070,25 @@
         slTrack.onChanging = function () { stTrack.text = "" + Math.round(slTrack.value); };
 
         var gColor = row(pCap);
-        var cFill = addColorControl(gColor, "Fill:", S.fillHex);
-        var cStroke = addColorControl(gColor, "Stroke:", S.strokeHex);
-        gColor.add("statictext", undefined, "Width:");
+        // Fill / Stroke each have an on-off toggle. Stroke is one control:
+        // colour + width together.
+        var cbFill = gColor.add("checkbox", undefined, "Fill");
+        cbFill.value = (S.fillOn !== false);
+        var cFill = addColorControl(gColor, "", S.fillHex);
+        var cbStroke = gColor.add("checkbox", undefined, "Stroke");
+        cbStroke.value = (S.strokeOn === true);
+        var cStroke = addColorControl(gColor, "", S.strokeHex);
         var etStrokeW = gColor.add("edittext", undefined, "" + S.strokeWidth); etStrokeW.characters = 3;
+        etStrokeW.helpTip = "Stroke width in pixels.";
+        gColor.add("statictext", undefined, "px");
+        function syncFillStroke() {
+            cFill.et.enabled = cbFill.value; cFill.swatch.enabled = cbFill.value;
+            var so = cbStroke.value;
+            cStroke.et.enabled = so; cStroke.swatch.enabled = so; etStrokeW.enabled = so;
+        }
+        cbFill.onClick = syncFillStroke;
+        cbStroke.onClick = syncFillStroke;
+        syncFillStroke();
 
         var gHl = row(pCap);
         var cbHl = gHl.add("checkbox", undefined, "Highlight spoken word");
@@ -850,24 +1097,6 @@
         cbHl.onClick = function () { cHl.et.enabled = cbHl.value; cHl.swatch.enabled = cbHl.value; };
         cHl.et.enabled = cbHl.value;
         cHl.swatch.enabled = cbHl.value;
-
-        var gRestyle = row(pCap);
-        var btnRestyle = gRestyle.add("button", undefined, "Restyle Selected");
-        btnRestyle.onClick = function () {
-            collect();
-            var comp = app.project ? app.project.activeItem : null;
-            if (!(comp && comp instanceof CompItem)) { status("No active composition."); return; }
-            var sel = comp.selectedLayers, n = 0;
-            app.beginUndoGroup("AutoCaption: Restyle");
-            try {
-                for (var i = 0; i < sel.length; i++) {
-                    if (!(sel[i] instanceof TextLayer)) continue;
-                    AC.restyle(sel[i], S);
-                    n++;
-                }
-            } finally { app.endUndoGroup(); }
-            status(n ? ("Restyled " + n + " text layer(s).") : "Select text layers first.");
-        };
 
         var gAnim = row(pCap);
         var cbAnim = gAnim.add("checkbox", undefined, "Text animation");
@@ -881,29 +1110,29 @@
             if (animNames[aj] === S.animPreset) ddAnim.selection = aj;
         cbAnim.onClick = function () { ddAnim.enabled = cbAnim.value; };
         ddAnim.enabled = cbAnim.value;
-        var btnReanim = gAnim.add("button", undefined, "Apply to Selected");
-        btnReanim.onClick = function () {
+
+        // Single button: re-apply current style AND animation to selected layers.
+        var gApply = row(pCap);
+        var btnApplySel = gApply.add("button", undefined, "Restyle + Apply Animation to Selected");
+        btnApplySel.onClick = function () {
             collect();
             var comp = app.project ? app.project.activeItem : null;
             if (!(comp && comp instanceof CompItem)) { status("No active composition."); return; }
             var sel = comp.selectedLayers, n = 0;
-            app.beginUndoGroup("AutoCaption: Change Animation");
+            app.beginUndoGroup("AutoCaption: Apply to Selected");
             try {
                 for (var i = 0; i < sel.length; i++) {
                     if (!(sel[i] instanceof TextLayer)) continue;
+                    AC.restyle(sel[i], S);
                     AC.clearAnim(sel[i]);
                     AC.addAnimPreset(sel[i], S);
                     n++;
                 }
             } finally { app.endUndoGroup(); }
-            status(n ? ((cbAnim.value ? "Set " + S.animPreset : "Removed animation") + " on " + n + " text layer(s).")
-                     : "Select text layers first.");
+            status(n ? ("Applied style + animation to " + n + " text layer(s).") : "Select text layers first.");
         };
 
-        var gGen = row(pCap);
-        var btnGenerate = gGen.add("button", undefined, "GENERATE CAPTIONS");
-        btnGenerate.preferredSize.width = 250;
-        btnGenerate.preferredSize.height = 32;
+        var btnGenerate = accentButton(pCap, "Generate Captions", 280, 46);
 
         // ===== status =====
         var stStatus = win.add("statictext", undefined, "Ready.", { truncate: "end" });
@@ -918,12 +1147,15 @@
             S.snapToFrame = cbSnap.value;
             S.stripPunct = cbPunct.value;
             S.placement = ddPlace.selection.text;
-            S.customY = parseFloat(etY.text) || 85;
+            S.customX = parseFloat(etX.text); if (isNaN(S.customX)) S.customX = 50;
+            S.customY = parseFloat(etY.text); if (isNaN(S.customY)) S.customY = 85;
             S.wordsPerScreen = Math.round(slWords.value);
             S.smartChunk = cbSmart.value;
             S.fontName = currentFontPS();
             S.fontSize = parseFloat(etSize.text) || 80;
             S.tracking = Math.round(slTrack.value);
+            S.fillOn = cbFill.value;
+            S.strokeOn = cbStroke.value;
             S.fillHex = cFill.et.text.replace("#", "");
             S.strokeHex = cStroke.et.text.replace("#", "");
             S.strokeWidth = parseFloat(etStrokeW.text) || 0;
@@ -1000,6 +1232,7 @@
         if (win instanceof Window) { win.center(); win.show(); }
         else { win.layout.layout(true); }
         syncKeyUI();
+        syncPlace();
 
         return win;
     }
