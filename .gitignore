@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# AutoCaption runtime / local state (never commit API keys)
+settings.json
+*.log
+/tmp/
+
+# Editor
+.vscode/
+.idea/
