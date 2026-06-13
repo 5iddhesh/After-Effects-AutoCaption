@@ -153,10 +153,6 @@ Audio layer ──ffmpeg──▶ 16kHz WAV ──curl──▶ Whisper API (ver
                                    chunk ▸ styled text layers ▸ highlight + animation
 ```
 
-The transcription core lives on `$.global.AutoCaptionCore` so it can be tested
-headless. Set `$.global.AC_CORE_ONLY = true` before `evalFile` to load the core
-without building the UI.
-
 ---
 
 ## Troubleshooting
@@ -166,7 +162,6 @@ without building the UI.
 | `command not found: brew` | Homebrew isn't on your PATH — run the PATH step above, then open a **new** terminal. |
 | `ffmpeg not found.` in the panel | `brew install ffmpeg`, then restart After Effects. |
 | `No API key set.` | Paste a Groq/OpenAI key in the panel and hit **Save**. |
-| `API HTTP 401` | Wrong/expired key, or an OpenRouter `sk-or-…` key (not supported). |
 | `Layer has no source file` | Pre-comp audio — flatten it, or import a transcript via SRT/JSON. |
 | Panel doesn't appear | Enable *Allow Scripts to Write Files and Access Network*, then restart AE. |
 
