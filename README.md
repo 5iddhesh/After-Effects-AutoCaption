@@ -1,6 +1,7 @@
-# After Effects AutoCaption
+# ⚡ After Effects AutoCaption — Captions in 2 Clicks, in Real Time
 
-![AutoCaption — captions in just 2 clicks](docs/demo.svg)
+> **Click 1: Transcribe. Click 2: Generate.** Word-accurate, auto-timed captions
+> drop straight onto your timeline — with the spoken word highlighting in real time.
 
 Word-accurate auto captions for Adobe After Effects, driven by a ScriptUI panel.
 Transcribes a selected audio/video layer with the **Groq** or **OpenAI Whisper**
@@ -28,9 +29,6 @@ Select your audio layer, then:
 
 That's it. Everything in between (style, highlight color, animation preset) has
 sensible defaults, so two clicks gets you finished captions on the timeline.
-
-> *The graphic above illustrates the panel and workflow — it's a faithful
-> mockup of the real UI, not a screen recording.*
 
 ---
 
